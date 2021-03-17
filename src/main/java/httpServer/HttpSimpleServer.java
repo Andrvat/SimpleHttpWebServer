@@ -49,11 +49,6 @@ public class HttpSimpleServer implements Runnable {
                 if (!requestsHandler.isConnectionPersistent()) {
                     clientSocket.close();
                     logger.log(Level.INFO, "Last client socket was closed");
-
-                    serverSocket.close();
-                    logger.log(Level.INFO, "Server socket was closed");
-
-                    break;
                 }
             } catch (IOException exception) {
                 logger.log(Level.SEVERE, "Something went wrong with socket...", exception);
