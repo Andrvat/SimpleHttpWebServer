@@ -2,7 +2,6 @@ package httpServer;
 
 import java.io.IOException;
 
-@FunctionalInterface
-public interface Handlesable {
+public interface Handler {
     void handleRequest() throws IOException;
 }

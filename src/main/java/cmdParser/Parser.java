@@ -2,7 +2,6 @@ package cmdParser;
 
 import org.apache.commons.cli.ParseException;
 
-@FunctionalInterface
-public interface Parseable {
+public interface Parser {
     void parseArgs(String[] args) throws ParseException;
 }

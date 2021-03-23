@@ -4,6 +4,7 @@ import cmdParser.CommandLineArgsParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.ParseException;
 
+import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -14,7 +15,13 @@ public class ServerLauncher {
 
     public static void main(String[] args) {
 
-        CommandLineArgsParser commandLineArgsParser = new CommandLineArgsParser();
+        CommandLineArgsParser commandLineArgsParser;
+        try {
+            commandLineArgsParser = new CommandLineArgsParser();
+        } catch (IOException exception) {
+            logger.log(Level.SEVERE, "Couldn't find command line properties", exception);
+            return;
+        }
         try {
             commandLineArgsParser.parseArgs(args);
         } catch (ParseException exception) {
@@ -27,10 +34,7 @@ public class ServerLauncher {
         }
 
         Integer workPort = commandLineArgsParser.isUserPortRequired() ? commandLineArgsParser.getUserPort() : DEFAULT_PORT;
-        HttpSimpleServer server = HttpSimpleServer.builder()
-                .clientPort(workPort)
-                .serverDirectory(System.getProperty("user.dir"))
-                .build();
+        HttpSimpleServer server = new HttpSimpleServer(workPort, System.getProperty("user.dir"));
 
         server.run();
 

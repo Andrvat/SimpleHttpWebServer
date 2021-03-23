@@ -3,6 +3,7 @@ package httpServer;
 import lombok.Builder;
 
 import java.io.*;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,32 +12,33 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @Builder
-public class HttpRequestsHandler implements Handlesable {
+public class HttpRequestsHandler implements Handler {
     private static final Logger logger = Logger.getLogger(ServerLauncher.class.getName());
 
-    private static final ArrayList<String> SUPPORTED_METHODS = new ArrayList<>() {{
-        add("GET");
-    }};
-
-    private static final Map<String, String> CONTENT_TYPES = new LinkedHashMap<>() {{
-        put("txt", "text/plain");
-        put("html", "text/html");
-        put("jpg", "image/jpeg");
-        put("", "text/plain");
-    }};
-
-    private static final Map<String, Integer> HEADERS_CODES = new LinkedHashMap<>() {{
-        put("Not Found", 404);
-        put("Method Not Allowed", 405);
-        put("OK", 200);
-        put("Not Acceptable", 406);
-    }};
+//    private static final ArrayList<String> SUPPORTED_METHODS = new ArrayList<>() {{
+//        add("GET");
+//    }};
+//
+//    private static final Map<String, String> CONTENT_TYPES = new LinkedHashMap<>() {{
+//        put("txt", "text/plain");
+//        put("html", "text/html");
+//        put("jpg", "image/jpeg");
+//        put("", "text/plain");
+//    }};
+//
+//    private static final Map<String, Integer> HEADERS_CODES = new LinkedHashMap<>() {{
+//        put("Not Found", 404);
+//        put("Method Not Allowed", 405);
+//        put("OK", 200);
+//        put("Not Acceptable", 406);
+//    }};
 
     private final int clientId;
 
-    private final InputStream inputStream;
-    private final OutputStream outputStream;
+    private InputStream inputStream;
+    private OutputStream outputStream;
     private final String serverDirectory;
+    private final Socket clientSocket;
 
     private String requestLine;
     private final Map<String, String> requestHeaderLines = new LinkedHashMap<>();
@@ -45,67 +47,82 @@ public class HttpRequestsHandler implements Handlesable {
     private final Map<String, String> answerHeaderLines = new LinkedHashMap<>();
     private byte[] answerEntityBody;
 
-    public boolean isConnectionPersistent() {
-        if (requestHeaderLines.containsKey("Connection")) {
-            return requestHeaderLines.get("Connection").equals("keep-alive");
-        }
-        return false;
-    }
-
     @Override
     public void handleRequest() throws IOException {
-        readHttpRequestFromInputStream();
+        inputStream = clientSocket.getInputStream();
+        outputStream = clientSocket.getOutputStream();
+
+        do {
+            if (clientSocket.isClosed()) {
+                break;
+            }
+
+            readHttpRequestFromInputStream();
+            logger.log(Level.INFO, "Client #" + clientId + ": " +
+                    "The request from the input stream was successfully read by the server");
+
+            String statusText;
+            String contentType;
+
+            String requestMethod = getRequestMethod();
+            logger.log(Level.INFO, "Client #" + clientId + ": " +
+                    "The request method was successfully got by the server");
+
+            if (!HttpUtils.getSupportedMethods().contains(requestMethod)) {
+                statusText = "Method Not Allowed";
+                contentType = "text";
+                answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
+                sendAnswerToClient(statusText, contentType, null);
+                return;
+            }
+
+            if (!isThereAtLeastOneDataTypeSupportedByServer()) {
+                statusText = "Not Acceptable";
+                contentType = "text";
+                answerEntityBody = HttpUtils.getContentTypes().toString().getBytes(StandardCharsets.UTF_8);
+                sendAnswerToClient(statusText, contentType, null);
+                return;
+            }
+
+            String requestUrl = getRequestUrl();
+            Path requestedResourcePath = Path.of(this.serverDirectory + requestUrl);
+
+            if (!Files.exists(requestedResourcePath) || Files.isDirectory(requestedResourcePath)) {
+                statusText = "Not Found";
+                contentType = "text";
+                answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
+                sendAnswerToClient(statusText, contentType, null);
+                return;
+            }
+
+            statusText = "OK";
+            contentType = HttpUtils.getContentTypes().get(getFileExtension(requestedResourcePath));
+            answerEntityBody = Files.readAllBytes(requestedResourcePath);
+            sendAnswerToClient(statusText, contentType, requestedResourcePath);
+        } while (requestHeaderLines.containsKey("Connection") &&
+                requestHeaderLines.get("Connection").equals("keep-alive"));
+
         logger.log(Level.INFO, "Client #" + clientId + ": " +
-                "The request from the input stream was successfully read by the server");
-
-        String statusText;
-        String contentType;
-
-        String requestMethod = getRequestMethod();
-        logger.log(Level.INFO, "Client #" + clientId + ": " +
-                "The request method was successfully got by the server");
-
-        if (!SUPPORTED_METHODS.contains(requestMethod)) {
-            statusText = "Method Not Allowed";
-            contentType = "text";
-            answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
-            sendAnswerToClient(statusText, contentType, null);
-            return;
-        }
-
-        if (!isThereAtLeastOneDataTypeSupportedByServer()) {
-            statusText = "Not Acceptable";
-            contentType = "text";
-            answerEntityBody = CONTENT_TYPES.toString().getBytes(StandardCharsets.UTF_8);
-            sendAnswerToClient(statusText, contentType, null);
-            return;
-        }
-
-        String requestUrl = getRequestUrl();
-        Path requestedResourcePath = Path.of(this.serverDirectory + requestUrl);
-
-        if (!Files.exists(requestedResourcePath) || Files.isDirectory(requestedResourcePath)) {
-            statusText = "Not Found";
-            contentType = "text";
-            answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
-            sendAnswerToClient(statusText, contentType, null);
-            return;
-        }
-
-        statusText = "OK";
-        contentType = CONTENT_TYPES.get(getFileExtension(requestedResourcePath));
-        answerEntityBody = Files.readAllBytes(requestedResourcePath);
-        sendAnswerToClient(statusText, contentType, requestedResourcePath);
+                "Finish of processing all client's requests");
     }
 
     private void readHttpRequestFromInputStream() throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
         requestLine = reader.readLine();
-        String currentLineFromHttpRequest;
-        while (!(currentLineFromHttpRequest = reader.readLine()).equals("")) {
-            requestHeaderLines.put(currentLineFromHttpRequest.substring(0, currentLineFromHttpRequest.indexOf(":")),
+        String currentLineFromHttpRequest = reader.readLine();
+        while (currentLineFromHttpRequest != null && !currentLineFromHttpRequest.equals("")) {
+            requestHeaderLines.put(
+                    toFirstUpperCase(currentLineFromHttpRequest.substring(0, currentLineFromHttpRequest.indexOf(":"))),
                     currentLineFromHttpRequest.substring(currentLineFromHttpRequest.indexOf(" ") + 1));
+            currentLineFromHttpRequest = reader.readLine();
         }
+    }
+
+    private String toFirstUpperCase(String word) {
+        if (word == null || word.isEmpty()) {
+            return "";
+        }
+        return word.substring(0, 1).toUpperCase() + word.substring(1);
     }
 
     private boolean isThereAtLeastOneDataTypeSupportedByServer() {
@@ -119,7 +136,7 @@ public class HttpRequestsHandler implements Handlesable {
         for (String type : acceptedTypes) {
             if (type.contains("*")) {
                 String mimeType = type.substring(0, type.indexOf("/"));
-                for (Map.Entry<String, String> entry : CONTENT_TYPES.entrySet()) {
+                for (Map.Entry<String, String> entry : HttpUtils.getContentTypes().entrySet()) {
                     String value = entry.getValue();
                     if (value.substring(0, value.indexOf("/")).equals(mimeType)) {
                         return true;
@@ -127,7 +144,7 @@ public class HttpRequestsHandler implements Handlesable {
                 }
             }
 
-            if (CONTENT_TYPES.containsValue(type)) {
+            if (HttpUtils.getContentTypes().containsValue(type)) {
                 return true;
             }
         }
@@ -156,7 +173,7 @@ public class HttpRequestsHandler implements Handlesable {
 
         stringBuilder.append("HTTP/1.1")
                 .append(" ")
-                .append(HEADERS_CODES.get(statusText))
+                .append(HttpUtils.getHeadersCodes().get(statusText))
                 .append(" ")
                 .append(statusText)
                 .append("\n");
@@ -166,7 +183,7 @@ public class HttpRequestsHandler implements Handlesable {
         logger.log(Level.INFO, "Client #" + clientId + ": " +
                 "Status line was successfully written");
 
-        if (HEADERS_CODES.get(statusText) == 200) {
+        if (HttpUtils.getHeadersCodes().get(statusText) == 200) {
             createAnswerHeaderLines(type, requestedResourcePath);
             for (Map.Entry<String, String> entry : answerHeaderLines.entrySet()) {
                 stringBuilder.append(entry.getKey())

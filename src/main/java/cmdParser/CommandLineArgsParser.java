@@ -2,35 +2,34 @@ package cmdParser;
 
 import org.apache.commons.cli.*;
 
+import javax.swing.text.StyledEditorKit;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
 import java.util.logging.Logger;
 
-public class CommandLineArgsParser implements Parseable {
+public class CommandLineArgsParser implements Parser {
     private static final Logger logger = Logger.getLogger(CommandLineArgsParser.class.getName());
 
     private final Options parserOptions;
     private Integer userPort;
 
-    public CommandLineArgsParser() {
+    public CommandLineArgsParser() throws IOException {
         parserOptions = new Options();
-        parserOptions.addOption(createNewOption(OptionParamsBuilder.builder()
-                .opt("p")
-                .longOpt("port")
-                .hasArg(true)
-                .description("The port where the connection will start")
-                .build()));
+
+        Properties serverPortProperties = new Properties();
+        serverPortProperties.load(new FileInputStream("src/main/resources/serverMainPortOption.properties"));
+        Option serverPortOption = new Option(
+                serverPortProperties.getProperty("opt"),
+                serverPortProperties.getProperty("longOpt"),
+                Boolean.parseBoolean(serverPortProperties.getProperty("hasArg")),
+                serverPortProperties.getProperty("description"));
+        serverPortOption.setRequired(true);
+        parserOptions.addOption(serverPortOption);
 
         logger.info("All options were added by class constructor");
-    }
-
-    private Option createNewOption(OptionParamsBuilder paramsBuilder) {
-        Option option = new Option(paramsBuilder.getOpt(),
-                paramsBuilder.getLongOpt(),
-                paramsBuilder.hasArg(),
-                paramsBuilder.getDescription());
-        option.setRequired(true);
-
-        logger.info("Option was created with setRequired(false)");
-        return option;
     }
 
     @Override
