@@ -59,10 +59,6 @@ public class HttpSimpleServer implements Runnable {
                 logger.log(Level.INFO, "Client request handled. " +
                         "Total clients: " + clientsCounter);
 
-//                if (!requestsHandler.isConnectionPersistent()) {
-//                    clientSocket.close();
-//                    logger.log(Level.INFO, "Last client socket was closed");
-//                }
             } catch (IOException exception) {
                 logger.log(Level.SEVERE, "Something went wrong with socket...", exception);
             }
