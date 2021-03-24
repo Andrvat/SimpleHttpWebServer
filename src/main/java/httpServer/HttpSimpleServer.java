@@ -6,7 +6,7 @@ import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class HttpSimpleServer implements Runnable {
+public class HttpSimpleServer {
     private static final Logger logger = Logger.getLogger(HttpSimpleServer.class.getName());
 
     private final Integer clientPort;
@@ -18,7 +18,6 @@ public class HttpSimpleServer implements Runnable {
         this.serverDirectory = serverDirectory;
     }
 
-    @Override
     public void run() {
         ServerSocket serverSocket;
         try {
@@ -53,8 +52,12 @@ public class HttpSimpleServer implements Runnable {
                         .serverDirectory(serverDirectory)
                         .clientSocket(clientSocket)
                         .build();
-
-                requestsHandler.handleRequest();
+                try {
+                    requestsHandler.handleRequest();
+                } catch (EmptyHttpRequestException exception) {
+                    logger.log(Level.SEVERE, exception.getMessage(), exception);
+                    continue;
+                }
                 clientsCounter++;
                 logger.log(Level.INFO, "Client request handled. " +
                         "Total clients: " + clientsCounter);

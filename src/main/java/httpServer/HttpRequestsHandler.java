@@ -30,7 +30,7 @@ public class HttpRequestsHandler implements Handler {
     private byte[] answerEntityBody;
 
     @Override
-    public void handleRequest() throws IOException {
+    public void handleRequest() throws IOException, EmptyHttpRequestException {
         inputStream = clientSocket.getInputStream();
         outputStream = clientSocket.getOutputStream();
 
@@ -38,6 +38,7 @@ public class HttpRequestsHandler implements Handler {
             if (clientSocket.isClosed()) {
                 break;
             }
+
 
             readHttpRequestFromInputStream();
             logger.log(Level.INFO, "Client #" + clientId + ": " +
@@ -51,18 +52,18 @@ public class HttpRequestsHandler implements Handler {
                     "The request method was successfully got by the server");
 
             if (!HttpUtils.getSupportedMethods().contains(requestMethod)) {
-                statusText = "Method Not Allowed";
-                contentType = "text";
-                answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
-                sendAnswerToClient(statusText, contentType, null);
+                prepareAndSendServerAnswerToClient("Method Not Allowed",
+                        "text",
+                        "Method Not Allowed".getBytes(StandardCharsets.UTF_8),
+                        null);
                 return;
             }
 
             if (!isThereAtLeastOneDataTypeSupportedByServer()) {
-                statusText = "Not Acceptable";
-                contentType = "text";
-                answerEntityBody = HttpUtils.getContentTypes().toString().getBytes(StandardCharsets.UTF_8);
-                sendAnswerToClient(statusText, contentType, null);
+                prepareAndSendServerAnswerToClient("Not Acceptable",
+                        "text",
+                        HttpUtils.getContentTypes().toString().getBytes(StandardCharsets.UTF_8),
+                        null);
                 return;
             }
 
@@ -70,17 +71,17 @@ public class HttpRequestsHandler implements Handler {
             Path requestedResourcePath = Path.of(this.serverDirectory + requestUrl);
 
             if (!Files.exists(requestedResourcePath) || Files.isDirectory(requestedResourcePath)) {
-                statusText = "Not Found";
-                contentType = "text";
-                answerEntityBody = statusText.getBytes(StandardCharsets.UTF_8);
-                sendAnswerToClient(statusText, contentType, null);
+                prepareAndSendServerAnswerToClient("Not Found",
+                        "text",
+                        "Not Found".getBytes(StandardCharsets.UTF_8),
+                        null);
                 return;
             }
 
-            statusText = "OK";
-            contentType = HttpUtils.getContentTypes().get(getFileExtension(requestedResourcePath));
-            answerEntityBody = Files.readAllBytes(requestedResourcePath);
-            sendAnswerToClient(statusText, contentType, requestedResourcePath);
+            prepareAndSendServerAnswerToClient("OK",
+                    HttpUtils.getContentTypes().get(getFileExtension(requestedResourcePath)),
+                    Files.readAllBytes(requestedResourcePath),
+                    requestedResourcePath);
         } while (requestHeaderLines.containsKey("Connection") &&
                 requestHeaderLines.get("Connection").equals("keep-alive"));
 
@@ -88,9 +89,18 @@ public class HttpRequestsHandler implements Handler {
                 "Finish of processing all client's requests");
     }
 
-    private void readHttpRequestFromInputStream() throws IOException {
+    private void prepareAndSendServerAnswerToClient(String statusText, String contentType,
+                                                    byte[] entityBody, Path requestedResourcePath) throws IOException {
+        answerEntityBody = entityBody;
+        sendAnswerToClient(statusText, contentType, requestedResourcePath);
+    }
+
+    private void readHttpRequestFromInputStream() throws IOException, EmptyHttpRequestException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
         requestLine = reader.readLine();
+        if (requestLine == null) {
+            throw new EmptyHttpRequestException("Couldn't read request line from client socket");
+        }
         String currentLineFromHttpRequest = reader.readLine();
         while (currentLineFromHttpRequest != null && !currentLineFromHttpRequest.equals("")) {
             requestHeaderLines.put(
